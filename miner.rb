@@ -1,5 +1,7 @@
 require "socket"
 
+START_PORT = 8000
+
 class Server
   attr_reader :ip
   attr_reader :port
@@ -11,6 +13,10 @@ class Server
 
   def connect
     TCPSocket.new(@ip, @port)
+  end
+
+  def pretty_s
+    "#{@ip}:#{@port}"
   end
 end
 
@@ -27,25 +33,6 @@ def ping(server)
   end
 end
 
-START_PORT = 8000
-port = START_PORT
-known_servers = []
-server = nil
-loop do
-  server = Server.new("localhost", port)
-  exists = ping server
-  if exists
-    port += 1
-    known_servers.push(server)
-    puts "Known nodes: #{known_servers}"
-  else
-    break
-  end
-end
-
-tcp_server = TCPServer.new(server.ip, server.port)
-puts "Server started on #{port}"
-
 def connect(client, data)
   puts "New client: #{client}"
 
@@ -57,7 +44,11 @@ def connect(client, data)
     response = "hi"
   elsif request.start_with?("GET")
     puts "GET Request"
-    response = http_html_response(200, "<h1>Status</h1>#{escape_html(data[:known_servers].to_s)}")
+    servers = data[:known_servers]
+    body = "<ul>"
+    servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
+    body += "</ul>"
+    response = http_html_response(200, "<h1>Status</h1>#{body}")
   end
   puts "Response:"
   puts response
@@ -70,7 +61,8 @@ end
 def http_html_response(code, body)
   "HTTP/1.1 #{code}\r\n" +
   "Content-type: text/html\r\n" +
-  "\r\n#{body}"
+  "\r\n" +
+  "#{body}"
 end
 
 def escape_html(text)
@@ -86,12 +78,34 @@ def escape_html(text)
   result
 end
 
-loop do
-  STDOUT.flush
-  client = tcp_server.accept
-  Thread.new do
-    connect(client, {
-      known_servers: known_servers
-    })
+def main
+  port = START_PORT
+  known_servers = []
+  server = nil
+  loop do
+    server = Server.new("localhost", port)
+    exists = ping server
+    if exists
+      port += 1
+      known_servers.push(server)
+      puts "Known nodes: #{known_servers}"
+    else
+      break
+    end
+  end
+
+  tcp_server = TCPServer.new(server.ip, server.port)
+  puts "Server started on #{port}"
+
+  loop do
+    STDOUT.flush
+    client = tcp_server.accept
+    Thread.new do
+      connect(client, {
+        known_servers: known_servers
+      })
+    end
   end
 end
+
+main
