@@ -1,6 +1,18 @@
 require "socket"
 
 START_PORT = 8000
+WORDS = [
+  "steak", "ethics", "location", "school", "presence", "virus", "unlike",
+  "desert", "publicity", "computer", "register", "profit", "plot", "conference",
+  "large", "peak", "performance", "country", "kick", "firm", "damn", "enemy",
+  "appendix", "exotic", "dedicate", "rubbish", "licence", "incredible",
+  "construct", "common", "influence", "elect", "ladder", "modernize", "squash",
+  "compliance", "patent", "valley", "load", "toast", "road", "lump", "thigh",
+  "steward", "grind", "able", "impress", "network", "experienced", "hero",
+  "finger", "island", "precision", "tropical", "fitness", "environmental",
+  "society", "approve", "illusion", "persist", "bacon", "intention", "jump",
+  "bridge",
+]
 
 class Server
   attr_reader :ip
@@ -45,8 +57,22 @@ def connect(client, data)
   elsif request.start_with?("GET")
     puts "GET Request"
     servers = data[:known_servers]
-    body = "<ul>"
+    body = ""
+    body += "<h2>Known Servers</h2><ul>"
     servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
+    body += "</ul>"
+    body += "<h2>Random Messages</h2><ul>"
+    10.times do
+      msg = ""
+      num = 2 + rand(6)
+      num.times do |i|
+        if i != 0
+          msg += " "
+        end
+        msg += WORDS.sample
+      end
+      body += "<li>#{msg}</li>"
+    end
     body += "</ul>"
     response = http_html_response(200, "<h1>Status</h1>#{body}")
   end
