@@ -1,3 +1,4 @@
+require "securerandom"
 require "socket"
 
 START_PORT = 8000
@@ -15,6 +16,7 @@ WORDS = [
 ]
 
 $known_servers = []
+$known_blocks = {}
 
 class Server
   attr_reader :ip
@@ -34,6 +36,16 @@ class Server
   end
 end
 
+class Block
+  attr_accessor :id
+  attr_accessor :time
+  attr_accessor :message
+
+  def pretty_s
+    "#{@id}: #{@message}"
+  end
+end
+
 def ping(server)
   begin
     socket = server.connect
@@ -47,6 +59,18 @@ def ping(server)
   end
 end
 
+def random_sentence
+  msg = ""
+  num = 2 + rand(6)
+  num.times do |i|
+    if i != 0
+      msg += " "
+    end
+    msg += WORDS.sample
+  end
+  msg
+end
+
 def connect(client)
   puts "New client: #{client}"
 
@@ -58,22 +82,13 @@ def connect(client)
     response = "hi"
   elsif request.start_with?("GET")
     puts "GET Request"
-    servers = $known_servers
     body = ""
     body += "<h2>Known Servers</h2><ul>"
-    servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
+    $known_servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
     body += "</ul>"
-    body += "<h2>Random Messages</h2><ul>"
-    10.times do
-      msg = ""
-      num = 2 + rand(6)
-      num.times do |i|
-        if i != 0
-          msg += " "
-        end
-        msg += WORDS.sample
-      end
-      body += "<li>#{msg}</li>"
+    body += "<h2>Known Blocks</h2><ul>"
+    for _, block in $known_blocks do
+      body += "<li>#{escape_html(block.pretty_s)}</li>"
     end
     body += "</ul>"
     response = http_html_response(200, "<h1>Status</h1>#{body}")
@@ -138,18 +153,10 @@ def find_port
   port
 end
 
-def main
-  options = parse_args(ARGV)
-  port = options[:port]
-  if port == nil
-    port = find_port()
-  end
-  server = Server.new("localhost", port)
-
-  tcp_server = TCPServer.new(server.ip, server.port)
-  puts "Server started on port #{port}"
-
-  t = Thread.new do
+def server_thread(server)
+  Thread.new do
+    tcp_server = TCPServer.new(server.ip, server.port)
+    puts "Server started on port #{server.port}"
     loop do
       STDOUT.flush
       client = tcp_server.accept
@@ -158,7 +165,38 @@ def main
       end
     end
   end
-  t.join
+end
+
+def miner_thread
+  Thread.new do
+    loop do
+      block = Block.new
+      block.id = SecureRandom.uuid
+      block.message = random_sentence
+      $known_blocks[block.id] = block
+      puts "Mined block: #{block.pretty_s}"
+      STDOUT.flush
+      sleep 5
+    end
+  end
+end
+
+def main
+  options = parse_args(ARGV)
+  port = options[:port]
+  if port == nil
+    port = find_port()
+  end
+  server = Server.new("localhost", port)
+
+
+  threads = [
+    server_thread(server),
+    miner_thread(),
+  ]
+  for t in threads
+    t.join
+  end
 end
 
 main
