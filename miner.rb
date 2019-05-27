@@ -14,6 +14,8 @@ WORDS = [
   "bridge",
 ]
 
+$known_servers = []
+
 class Server
   attr_reader :ip
   attr_reader :port
@@ -45,7 +47,7 @@ def ping(server)
   end
 end
 
-def connect(client, data)
+def connect(client)
   puts "New client: #{client}"
 
   request = client.readpartial 2048
@@ -56,7 +58,7 @@ def connect(client, data)
     response = "hi"
   elsif request.start_with?("GET")
     puts "GET Request"
-    servers = data[:known_servers]
+    servers = $known_servers
     body = ""
     body += "<h2>Known Servers</h2><ul>"
     servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
@@ -104,34 +106,59 @@ def escape_html(text)
   result
 end
 
-def main
+def parse_args(args)
+  i = 0
+  result = {}
+  while i < args.length
+    arg = args[i]
+    if arg == "-p" || arg == "--port"
+      i += 1
+      result[:port] = args[i].to_i
+    else
+      puts "Unknown command line argument: #{arg}"
+      exit 1
+    end
+    i += 1
+  end
+  result
+end
+
+def find_port
   port = START_PORT
-  known_servers = []
-  server = nil
   loop do
     server = Server.new("localhost", port)
     exists = ping server
     if exists
       port += 1
-      known_servers.push(server)
-      puts "Known nodes: #{known_servers}"
+      $known_servers.push(server)
     else
       break
     end
   end
+  port
+end
+
+def main
+  options = parse_args(ARGV)
+  port = options[:port]
+  if port == nil
+    port = find_port()
+  end
+  server = Server.new("localhost", port)
 
   tcp_server = TCPServer.new(server.ip, server.port)
-  puts "Server started on #{port}"
+  puts "Server started on port #{port}"
 
-  loop do
-    STDOUT.flush
-    client = tcp_server.accept
-    Thread.new do
-      connect(client, {
-        known_servers: known_servers
-      })
+  t = Thread.new do
+    loop do
+      STDOUT.flush
+      client = tcp_server.accept
+      Thread.new do
+        connect(client)
+      end
     end
   end
+  t.join
 end
 
 main
