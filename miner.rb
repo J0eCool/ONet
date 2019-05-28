@@ -28,7 +28,7 @@ class Server
   end
 
   def ==(other)
-    @ip == other.ip || @port == other.port
+    @ip == other.ip && @port == other.port
   end
 
   def connect
@@ -48,31 +48,31 @@ class Block
   attr_reader :id
   attr_reader :time
   attr_reader :message
-  attr_reader :author
+  attr_reader :miner
 
-  def initialize(message, author, id=SecureRandom.uuid, time=Time.new)
+  def initialize(message, miner, id=SecureRandom.uuid, time=Time.new)
     @message = message
-    @author = author
+    @miner = miner
     @id = id
     @time = time
   end
 
   def pretty_s
-    "#{@id.split("-")[0]}@#{@author}: #{@message}"
+    "#{@id.split("-")[0]}@#{@miner}: #{@message} (#{@time})"
   end
 
   def to_wire
     us = (@time.to_f * 1000000).to_i
-    "#{@id}|#{us}|#{author}|#{@message}"
+    "#{@id}|#{us}|#{miner}|#{@message}"
   end
 
   def self.from_wire(str)
     parts = str.split("|")
     id = parts[0]
-    time = parts[1].to_f / 1000000
-    author = parts[2]
+    time = Time.at(parts[1].to_f / 1000000)
+    miner = parts[2]
     msg = parts[3]
-    Block.new(msg, author, id, time)
+    Block.new(msg, miner, id, time)
   end
 end
 
@@ -130,6 +130,13 @@ def connect(client)
       puts "Pull"
       blocks = $known_blocks.values.sample(5)
       response = blocks.map { |b| b.to_wire }.join("\r\n")
+    elsif cmd == "PUSH"
+      lines[1..-1].each do |line|
+        block = Block.from_wire(line)
+        add_block(block)
+        srv = block.miner.split(":")
+        add_server(Server.new(srv[0], srv[1].to_i))
+      end
     end
   elsif request.start_with?("GET")
     puts "GET Request"
@@ -240,8 +247,12 @@ end
 def pull_thread
   Thread.new do
     loop do
+      sleep 10
       begin
         server = $known_servers.sample
+        if not server
+          next
+        end
         puts "[PULL] Pulling from #{server}..."
         socket = server.connect
         socket.write "OMEGA PULL"
@@ -253,14 +264,37 @@ def pull_thread
         lines.each do |line|
           block = Block.from_wire(line)
           add_block(block)
-          host, port = block.author.split(":")
-          add_server(Server.new(host, port))
+          srv = block.miner.split(":")
+          add_server(Server.new(srv[0], srv[1].to_i))
         end
       rescue Exception => e
         puts "[PULL] failed w/:\n#{e}"
       end
       STDOUT.flush
+    end
+  end
+end
+
+def push_thread
+  Thread.new do
+    loop do
       sleep 10
+      begin
+        server = $known_servers.sample
+        if not server
+          next
+        end
+        puts "[PUSH] Pushing to #{server}..."
+        socket = server.connect
+        request = "OMEGA PUSH\r\n"
+        blocks = $known_blocks.values.sample(5)
+        request += blocks.map { |b| b.to_wire }.join("\r\n")
+        socket.write request
+        socket.close
+      rescue Exception => e
+        puts "[PUSH] failed w/:\n#{e}"
+      end
+      STDOUT.flush
     end
   end
 end
@@ -268,13 +302,14 @@ end
 def main
   options = parse_args(ARGV)
   port = options[:port] || find_port()
-  mine_delay = options[:mine_delay] || 5
+  mine_delay = options[:mine_delay] || 15
   server = Server.new("localhost", port)
 
   threads = [
     server_thread(server),
     miner_thread(server, mine_delay),
     pull_thread(),
+    push_thread(),
   ]
   for t in threads
     t.join
