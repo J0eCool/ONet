@@ -31,6 +31,10 @@ class Server
     TCPSocket.new(@ip, @port)
   end
 
+  def serve
+    TCPServer.new(@ip, @port)
+  end
+
   def pretty_s
     "#{@ip}:#{@port}"
   end
@@ -40,9 +44,11 @@ class Block
   attr_reader :id
   attr_reader :time
   attr_reader :message
+  attr_reader :author
 
-  def initialize(message, id=SecureRandom.uuid, time=Time.new)
+  def initialize(message, author, id=SecureRandom.uuid, time=Time.new)
     @message = message
+    @author = author
     @id = id
     @time = time
   end
@@ -58,8 +64,11 @@ class Block
 
   def self.from_wire(str)
     parts = str.split("|")
+    id = parts[0]
     time = parts[1].to_f / 1000000
-    Block.new(parts[2], parts[0], Time.at(time))
+    author = parts[2]
+    msg = parts[3]
+    Block.new(msg, author, id, time)
   end
 end
 
@@ -105,8 +114,7 @@ def connect(client)
     body += "</ul>"
     body += "<h2>Known Blocks</h2><ul>"
     for _, block in $known_blocks do
-      wire = block.to_wire
-      body += "<li>#{escape_html(block.pretty_s)}<br>#{wire} -&gt<br> #{Block.from_wire(wire).to_wire}</li>"
+      body += "<li>#{escape_html(block.pretty_s)}</li>"
     end
     body += "</ul>"
     response = http_html_response(200, "<h1>Status</h1>#{body}")
@@ -145,8 +153,14 @@ def parse_args(args)
   while i < args.length
     arg = args[i]
     if arg == "-p" || arg == "--port"
+      result[:port] = args[i + 1].to_i
       i += 1
-      result[:port] = args[i].to_i
+    elsif arg == "-k" || arg == "--known"
+      $known_servers.push(Server.new(args[i + 1], args[i + 2].to_i))
+      i += 2
+    elsif arg == "-m" || arg == "--mine-delay"
+      result[:mine_delay] = args[i + 1].to_i
+      i += 1
     else
       puts "Unknown command line argument: #{arg}"
       exit 1
@@ -173,7 +187,7 @@ end
 
 def server_thread(server)
   Thread.new do
-    tcp_server = TCPServer.new(server.ip, server.port)
+    tcp_server = server.serve
     puts "Server started on port #{server.port}"
     loop do
       STDOUT.flush
@@ -185,30 +199,28 @@ def server_thread(server)
   end
 end
 
-def miner_thread
+def miner_thread(server, mine_delay)
+  if mine_delay == 0 then return end
   Thread.new do
     loop do
-      block = Block.new(random_sentence())
+      block = Block.new(random_sentence(), server.pretty_s)
       $known_blocks[block.id] = block
       puts "Mined block: #{block.pretty_s}"
       STDOUT.flush
-      sleep 5
+      sleep mine_delay
     end
   end
 end
 
 def main
   options = parse_args(ARGV)
-  port = options[:port]
-  if port == nil
-    port = find_port()
-  end
+  port = options[:port] || find_port()
+  mine_delay = options[:mine_delay] || 5
   server = Server.new("localhost", port)
-
 
   threads = [
     server_thread(server),
-    miner_thread(),
+    miner_thread(server, mine_delay),
   ]
   for t in threads
     t.join
