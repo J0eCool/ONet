@@ -37,12 +37,29 @@ class Server
 end
 
 class Block
-  attr_accessor :id
-  attr_accessor :time
-  attr_accessor :message
+  attr_reader :id
+  attr_reader :time
+  attr_reader :message
+
+  def initialize(message, id=SecureRandom.uuid, time=Time.new)
+    @message = message
+    @id = id
+    @time = time
+  end
 
   def pretty_s
     "#{@id}: #{@message}"
+  end
+
+  def to_wire
+    us = (@time.to_f * 1000000).to_i
+    "#{@id}|#{us}|#{@message}"
+  end
+
+  def self.from_wire(str)
+    parts = str.split("|")
+    time = parts[1].to_f / 1000000
+    Block.new(parts[2], parts[0], Time.at(time))
   end
 end
 
@@ -88,7 +105,8 @@ def connect(client)
     body += "</ul>"
     body += "<h2>Known Blocks</h2><ul>"
     for _, block in $known_blocks do
-      body += "<li>#{escape_html(block.pretty_s)}</li>"
+      wire = block.to_wire
+      body += "<li>#{escape_html(block.pretty_s)}<br>#{wire} -&gt<br> #{Block.from_wire(wire).to_wire}</li>"
     end
     body += "</ul>"
     response = http_html_response(200, "<h1>Status</h1>#{body}")
@@ -170,9 +188,7 @@ end
 def miner_thread
   Thread.new do
     loop do
-      block = Block.new
-      block.id = SecureRandom.uuid
-      block.message = random_sentence
+      block = Block.new(random_sentence())
       $known_blocks[block.id] = block
       puts "Mined block: #{block.pretty_s}"
       STDOUT.flush
