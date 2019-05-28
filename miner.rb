@@ -54,12 +54,12 @@ class Block
   end
 
   def pretty_s
-    "#{@id}: #{@message}"
+    "#{@id.split("-")[0]}@#{@author}: #{@message}"
   end
 
   def to_wire
     us = (@time.to_f * 1000000).to_i
-    "#{@id}|#{us}|#{@message}"
+    "#{@id}|#{us}|#{author}|#{@message}"
   end
 
   def self.from_wire(str)
@@ -75,9 +75,10 @@ end
 def ping(server)
   begin
     socket = server.connect
-    socket.write "ping"
+    socket.write "OMEGA PING"
     resp = socket.recv 1024
     puts "Pinged #{server} - recvd response:\n#{resp}"
+    socket.close
     return true
   rescue Exception => e
     puts "ping and fail w/ #{e}"
@@ -103,9 +104,17 @@ def connect(client)
   request = client.readpartial 2048
   puts "Request:"
   puts request
-  if request == "ping"
-    puts "Ping"
-    response = "hi"
+  if request.start_with?("OMEGA")
+    lines = request.split("\r\n")
+    cmd = lines[0].split(" ")[1]
+    if cmd == "PING"
+      puts "Ping"
+      response = "hi"
+    elsif cmd == "PULL"
+      puts "Pull"
+      blocks = $known_blocks.values.sample(5)
+      response = blocks.map { |b| b.to_wire }.join("\r\n")
+    end
   elsif request.start_with?("GET")
     puts "GET Request"
     body = ""
@@ -212,6 +221,34 @@ def miner_thread(server, mine_delay)
   end
 end
 
+def pull_thread
+  Thread.new do
+    loop do
+      begin
+        server = $known_servers.sample
+        puts "[PULL] Pulling from #{server}..."
+        socket = server.connect
+        socket.write "OMEGA PULL"
+        response = socket.recv 4096
+        puts "[PULL] recvd response:\n#{response}"
+        socket.close
+
+        lines = response.split("\r\n")
+        lines.each do |line|
+          block = Block.from_wire(line)
+          if not $known_blocks.has_key?(block.id)
+            $known_blocks[block.id] = block
+          end
+        end
+      rescue Exception => e
+        puts "[PULL] failed w/:\n#{e}"
+      end
+      STDOUT.flush
+      sleep 10
+    end
+  end
+end
+
 def main
   options = parse_args(ARGV)
   port = options[:port] || find_port()
@@ -221,6 +258,7 @@ def main
   threads = [
     server_thread(server),
     miner_thread(server, mine_delay),
+    pull_thread(),
   ]
   for t in threads
     t.join
