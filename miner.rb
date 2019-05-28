@@ -27,6 +27,10 @@ class Server
     @port = port
   end
 
+  def ==(other)
+    @ip == other.ip || @port == other.port
+  end
+
   def connect
     TCPSocket.new(@ip, @port)
   end
@@ -69,6 +73,18 @@ class Block
     author = parts[2]
     msg = parts[3]
     Block.new(msg, author, id, time)
+  end
+end
+
+def add_server(server)
+  if not $known_servers.include?(server)
+    $known_servers.push(server)
+  end
+end
+
+def add_block(block)
+  if not $known_blocks.has_key?(block.id)
+    $known_blocks[block.id] = block
   end
 end
 
@@ -165,7 +181,7 @@ def parse_args(args)
       result[:port] = args[i + 1].to_i
       i += 1
     elsif arg == "-k" || arg == "--known"
-      $known_servers.push(Server.new(args[i + 1], args[i + 2].to_i))
+      add_server(Server.new(args[i + 1], args[i + 2].to_i))
       i += 2
     elsif arg == "-m" || arg == "--mine-delay"
       result[:mine_delay] = args[i + 1].to_i
@@ -186,7 +202,7 @@ def find_port
     exists = ping server
     if exists
       port += 1
-      $known_servers.push(server)
+      add_server(server)
     else
       break
     end
@@ -213,7 +229,7 @@ def miner_thread(server, mine_delay)
   Thread.new do
     loop do
       block = Block.new(random_sentence(), server.pretty_s)
-      $known_blocks[block.id] = block
+      add_block(block)
       puts "Mined block: #{block.pretty_s}"
       STDOUT.flush
       sleep mine_delay
@@ -236,9 +252,9 @@ def pull_thread
         lines = response.split("\r\n")
         lines.each do |line|
           block = Block.from_wire(line)
-          if not $known_blocks.has_key?(block.id)
-            $known_blocks[block.id] = block
-          end
+          add_block(block)
+          host, port = block.author.split(":")
+          add_server(Server.new(host, port))
         end
       rescue Exception => e
         puts "[PULL] failed w/:\n#{e}"
