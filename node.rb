@@ -1,3 +1,4 @@
+require "openssl"
 require "securerandom"
 require "socket"
 
@@ -49,12 +50,15 @@ class Block
   attr_reader :time
   attr_reader :message
   attr_reader :miner
+  attr_reader :hash
 
   def initialize(message, miner, id=SecureRandom.uuid, time=Time.new)
     @message = message
     @miner = miner
     @id = id
     @time = time
+    header = id + miner + message + time.to_i.to_s
+    @hash = OpenSSL::Digest::SHA512.hexdigest(header)
   end
 
   def pretty_s
@@ -73,6 +77,13 @@ class Block
     miner = parts[2]
     msg = parts[3]
     Block.new(msg, miner, id, time)
+  end
+
+  def debug_html
+    "[#{@miner}] #{@time}" +
+    "<br>#{escape_html(@message)}" +
+    "<br>ID : #{@id}" +
+    "<br>Hash : #{@hash}"
   end
 end
 
@@ -146,7 +157,7 @@ def connect(client)
     body += "</ul>"
     body += "<h2>Known Blocks</h2><ul>"
     for _, block in $known_blocks do
-      body += "<li>#{escape_html(block.pretty_s)}</li>"
+      body += "<li>#{block.debug_html}</li>"
     end
     body += "</ul>"
     response = http_html_response(200, "<h1>Status</h1>#{body}")
