@@ -1,16 +1,66 @@
 <h1>Status</h1>
-Status
-<div id="body"></div>
+<h2>Servers</h2>
+<ul id="servers"></ul>
+<h2>Blocks</h2>
+<svg id="blocks"></svg>
 <script src="d3min.js"></script>
+<style>
+.links line {
+  stroke: #aaa;
+}
+.nodes circle {
+  pointer-events: all;
+  stroke: none;
+  stroke-width: 40px;
+}
+</style>
 <script>
-  console.log(d3);
   async function start() {
     var status = await fetch('data/status');
     var data = await status.json();
-    var divs = d3.select('#body').selectAll('div')
-      .data(data.blocks)
-      .enter().append('div')
-      .text((x) => x.message);
+
+    d3.select('#servers').selectAll('li').data(data.servers)
+      .enter().append('li').text((x) => x);
+
+    var links = [];
+    var nodes = {};
+    d3.values(data.blocks).forEach((b) => {
+      nodes[b.id] = b;
+      b.parents.forEach((p) => {
+        links.push({source: p, target: b.id});
+      });
+    });
+
+    var width = 800;
+    var height = 600;
+    var force = d3.forceSimulation()
+      .force('link', d3.forceLink().id((d) => d.id))
+      .force('charge', d3.forceManyBody())
+      .force('center', d3.forceCenter(width / 2, height / 2));
+
+    var svg = d3.select('#blocks')
+      .attr('width', width)
+      .attr('height', height);
+    var link = svg.append('g').attr('class', 'links')
+      .selectAll('line').data(links)
+      .enter().append('line');
+    var node = svg.append('g').attr('class', 'nodes')
+      .selectAll('circle').data(d3.values(nodes))
+      .enter().append('circle')
+        .attr('r', 12.5);
+    node.append('title').text((d) => d.id);
+
+    force.nodes(nodes).on('tick', () => {
+      node
+        .attr('cx', (d) => d.x)
+        .attr('cy', (d) => d.y);
+      link
+        .attr('x1', (d) => d.source.x)
+        .attr('y1', (d) => d.source.y)
+        .attr('x2', (d) => d.target.x)
+        .attr('y2', (d) => d.target.y);
+    });
+    force.force('link').links(links);
   }
   start();
 </script>

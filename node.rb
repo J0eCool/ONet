@@ -51,17 +51,19 @@ class Block
   attr_reader :message
   attr_reader :miner
   attr_reader :hash
+  attr_reader :parents
 
-  def initialize(message, miner, id=SecureRandom.uuid, time=Time.new)
+  def initialize(message, miner, id=SecureRandom.uuid, time=Time.new, parents: [])
     @message = message
     @miner = miner
     @id = id
     @time = time
+    @parents = parents
     @hash = self.compute_hash
   end
 
   def compute_hash
-    header = id + miner + message + time.to_i.to_s
+    header = @id + @miner + @message + @time.to_i.to_s + @parents.join("")
     OpenSSL::Digest::SHA512.hexdigest(header)
   end
 
@@ -71,7 +73,7 @@ class Block
 
   def to_wire
     us = (@time.to_f * 1000000).to_i
-    "#{@id}|#{us}|#{miner}|#{@message}"
+    "#{@id}|#{us}|#{miner}|#{@parents.join(",")}|#{@message}"
   end
 
   def self.from_wire(str)
@@ -79,8 +81,9 @@ class Block
     id = parts[0]
     time = Time.at(parts[1].to_f / 1000000)
     miner = parts[2]
-    msg = parts[3]
-    Block.new(msg, miner, id, time)
+    parents = parts[3].split(",")
+    msg = parts[4]
+    Block.new(msg, miner, id, time, parents)
   end
 
   def json
@@ -89,6 +92,7 @@ class Block
     ",\"message\":\"#{escape_html(@message)}\"" +
     ",\"id\":\"#{@id}\"" +
     ",\"hash\":\"#{@hash}\"" +
+    ",\"parents\":[#{@parents.map{|p| "\"#{p}\""}.join(",")}]" +
     "}"
   end
 end
@@ -161,10 +165,10 @@ def connect(client)
     if resource == "/data/status"
       puts "data/status"
       json = '{"servers":[' +
-      $known_servers.map { |server| "\"#{server.pretty_s}\"" }.join(",") +
-      '],"blocks":[' +
-      $known_blocks.values.map { |block| block.json }.join(",") +
-      ']}'
+        $known_servers.map { |server| "\"#{server.pretty_s}\"" }.join(",") +
+        '],"blocks":[' +
+        $known_blocks.values.map { |block| block.json }.join(",") +
+        ']}'
 
       response = http_html_response(200, json, "application/json")
     else
@@ -264,7 +268,8 @@ def miner_thread(server, mine_delay)
   if mine_delay == 0 then return end
   Thread.new do
     loop do
-      block = Block.new(random_sentence(), server.pretty_s)
+      parents = $known_blocks.keys.sample(2 + rand(4))
+      block = Block.new(random_sentence(), server.pretty_s, parents: parents)
       add_block(block)
       puts "Mined block: #{block.pretty_s}"
       STDOUT.flush
