@@ -57,8 +57,12 @@ class Block
     @miner = miner
     @id = id
     @time = time
+    @hash = self.compute_hash
+  end
+
+  def compute_hash
     header = id + miner + message + time.to_i.to_s
-    @hash = OpenSSL::Digest::SHA512.hexdigest(header)
+    OpenSSL::Digest::SHA512.hexdigest(header)
   end
 
   def pretty_s
@@ -131,8 +135,8 @@ def connect(client)
   request = client.readpartial 2048
   puts "Request:"
   puts request
+  lines = request.split("\r\n")
   if request.start_with?("OMEGA")
-    lines = request.split("\r\n")
     cmd = lines[0].split(" ")[1]
     if cmd == "PING"
       puts "Ping"
@@ -151,16 +155,29 @@ def connect(client)
     end
   elsif request.start_with?("GET")
     puts "GET Request"
-    body = ""
-    body += "<h2>Known Servers</h2><ul>"
-    $known_servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
-    body += "</ul>"
-    body += "<h2>Known Blocks</h2><ul>"
-    for _, block in $known_blocks do
-      body += "<li>#{block.debug_html}</li>"
+    resource = lines[0].split(" ")[1]
+    if resource == "/status"
+      body = "<h1>Status</h1>"
+      body += "<h2>Known Servers</h2><ul>"
+      $known_servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
+      body += "</ul>"
+      body += "<h2>Known Blocks</h2><ul>"
+      for _, block in $known_blocks do
+        body += "<li>#{block.debug_html}</li>"
+      end
+      body += "</ul>"
+      response = http_html_response(200, body)
+    else
+      if resource == "/"
+        resource = "/index.html"
+      end
+      begin
+        contents = File.read("debug_html" + resource)
+        response = http_html_response(200, contents)
+      rescue Exception => e
+        response = http_html_response(404, "<h1>404</h1><p>File not Found</p>")
+      end
     end
-    body += "</ul>"
-    response = http_html_response(200, "<h1>Status</h1>#{body}")
   end
   puts "Response:"
   puts response
