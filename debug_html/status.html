@@ -1,0 +1,16 @@
+<h1>Status</h1>
+Status
+<div id="body"></div>
+<script src="d3min.js"></script>
+<script>
+  console.log(d3);
+  async function start() {
+    var status = await fetch('data/status');
+    var data = await status.json();
+    var divs = d3.select('#body').selectAll('div')
+      .data(data.blocks)
+      .enter().append('div')
+      .text((x) => x.message);
+  }
+  start();
+</script>

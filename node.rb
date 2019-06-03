@@ -83,11 +83,13 @@ class Block
     Block.new(msg, miner, id, time)
   end
 
-  def debug_html
-    "[#{@miner}] #{@time}" +
-    "<br>#{escape_html(@message)}" +
-    "<br>ID : #{@id}" +
-    "<br>Hash : #{@hash}"
+  def json
+    "{\"miner\":\"#{@miner}\"" +
+    ",\"time\":\"#{@time}\"" +
+    ",\"message\":\"#{escape_html(@message)}\"" +
+    ",\"id\":\"#{@id}\"" +
+    ",\"hash\":\"#{@hash}\"" +
+    "}"
   end
 end
 
@@ -156,17 +158,15 @@ def connect(client)
   elsif request.start_with?("GET")
     puts "GET Request"
     resource = lines[0].split(" ")[1]
-    if resource == "/status"
-      body = "<h1>Status</h1>"
-      body += "<h2>Known Servers</h2><ul>"
-      $known_servers.each { |server| body += "<li>#{escape_html(server.pretty_s)}</li>" }
-      body += "</ul>"
-      body += "<h2>Known Blocks</h2><ul>"
-      for _, block in $known_blocks do
-        body += "<li>#{block.debug_html}</li>"
-      end
-      body += "</ul>"
-      response = http_html_response(200, body)
+    if resource == "/data/status"
+      puts "data/status"
+      json = '{"servers":[' +
+      $known_servers.map { |server| "\"#{server.pretty_s}\"" }.join(",") +
+      '],"blocks":[' +
+      $known_blocks.values.map { |block| block.json }.join(",") +
+      ']}'
+
+      response = http_html_response(200, json, "application/json")
     else
       if resource == "/"
         resource = "/index.html"
@@ -175,6 +175,7 @@ def connect(client)
         contents = File.read("debug_html" + resource)
         response = http_html_response(200, contents)
       rescue Exception => e
+        puts "[HTTP] failed to load #{resource} with error #{e}"
         response = http_html_response(404, "<h1>404</h1><p>File not Found</p>")
       end
     end
@@ -187,9 +188,9 @@ def connect(client)
   client.close
 end
 
-def http_html_response(code, body)
+def http_html_response(code, body, mime="text/html")
   "HTTP/1.1 #{code}\r\n" +
-  "Content-type: text/html\r\n" +
+  "Content-type: #{mime}\r\n" +
   "\r\n" +
   "#{body}"
 end
