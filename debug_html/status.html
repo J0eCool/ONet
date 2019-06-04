@@ -22,6 +22,8 @@
     d3.select('#servers').selectAll('li').data(data.servers)
       .enter().append('li').text((x) => x);
 
+    var width = 800;
+    var height = 600;
     var links = [];
     var nodes = {};
     d3.values(data.blocks).forEach((b) => {
@@ -29,11 +31,13 @@
       b.parents.forEach((p) => {
         links.push({source: p, target: b.id});
       });
+      b.vx = 0;
+      b.vy = 0;
+      b.x = Math.random() * 700 + 50;
+      b.y = Math.random() * 500 + 50;
     });
 
-    var width = 800;
-    var height = 600;
-    var force = d3.forceSimulation()
+     force = d3.forceSimulation()
       .force('link', d3.forceLink().id((d) => d.id))
       .force('charge', d3.forceManyBody())
       .force('center', d3.forceCenter(width / 2, height / 2));
@@ -44,16 +48,21 @@
     var link = svg.append('g').attr('class', 'links')
       .selectAll('line').data(links)
       .enter().append('line');
-    var node = svg.append('g').attr('class', 'nodes')
+     node = svg.append('g').attr('class', 'nodes')
       .selectAll('circle').data(d3.values(nodes))
       .enter().append('circle')
-        .attr('r', 12.5);
+        .attr('r', (d) => d.message.length/10 + 3);
     node.append('title').text((d) => d.id);
 
     force.nodes(nodes).on('tick', () => {
+      force.alpha(1.0).restart();
+      node.each((d) => {
+        d.x += d.vx / 60;
+        d.y += d.vy / 60;
+      })
       node
-        .attr('cx', (d) => d.x)
-        .attr('cy', (d) => d.y);
+        .attr('cx', (d, i) => d.x)
+        .attr('cy', (d, i) => d.y);
       link
         .attr('x1', (d) => d.source.x)
         .attr('y1', (d) => d.source.y)
