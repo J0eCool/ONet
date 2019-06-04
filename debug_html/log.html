@@ -1,0 +1,21 @@
+<h1>Log</h1>
+<a href="/">Index</a>
+<div>
+  Keys <span id="keys"></span>
+</div>
+<div id="log"></div>
+
+<script src="d3min.js"></script>
+<script>
+  async function start() {
+    var response = await fetch('data/log');
+    var data = await response.json();
+
+    var logKeys = ['ALL'].concat(d3.keys(data));
+    d3.select('#keys').selectAll('span').data(logKeys).enter()
+      .append('span').text(' | ')
+      .append('a').text((d) => d).attr('href', '#')
+        .on('click', (d) => { console.log('CLIKD ON THE ', d)});
+  }
+  start();
+</script>

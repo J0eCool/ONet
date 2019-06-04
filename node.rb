@@ -18,6 +18,7 @@ WORDS = [
 
 $known_servers = []
 $known_blocks = {}
+$logs = {}
 
 class Server
   attr_reader :ip
@@ -114,11 +115,11 @@ def ping(server)
     socket = server.connect
     socket.write "OMEGA PING"
     resp = socket.recv 1024
-    puts "Pinged #{server} - recvd response:\n#{resp}"
+    log "PING", "Pinged #{server} - recvd response:\n#{resp}"
     socket.close
     return true
   rescue Exception => e
-    puts "ping and fail w/ #{e}"
+    log "PING", "ping and fail w/ #{e}"
     return false
   end
 end
@@ -135,23 +136,40 @@ def random_sentence
   msg
 end
 
+def to_json(val)
+  if val.is_a?(Numeric)
+    val.to_s
+  elsif val.is_a?(Array)
+    "[#{val.map{|x| to_json(x)}.join(",")}]"
+  elsif val.is_a?(Hash)
+    "{" +
+    val.keys.map do |k|
+      "\"#{k}\":#{to_json(val[k])}"
+    end.join(",") +
+    "}"
+  else
+    "\"#{val.to_s}\""
+  end
+end
+
 def connect(client)
-  puts "New client: #{client}"
+  log "Request", "New client: #{client}"
 
   request = client.readpartial 2048
-  puts "Request:"
-  puts request
+  log "Request", "New request: #{request}"
   lines = request.split("\r\n")
   if request.start_with?("OMEGA")
+    log "Request", "OMEGA request"
     cmd = lines[0].split(" ")[1]
     if cmd == "PING"
-      puts "Ping"
+      log "OMEGA", "Ping"
       response = "hi"
     elsif cmd == "PULL"
-      puts "Pull"
+      log "OMEGA", "Pull"
       blocks = $known_blocks.values.sample(5)
       response = blocks.map { |b| b.to_wire }.join("\r\n")
     elsif cmd == "PUSH"
+      log "OMEGA", "Push"
       lines[1..-1].each do |line|
         block = Block.from_wire(line)
         add_block(block)
@@ -159,17 +177,24 @@ def connect(client)
         add_server(Server.new(srv[0], srv[1].to_i))
       end
     end
+    log "OMEGA", "Response: #{response}"
   elsif request.start_with?("GET")
-    puts "GET Request"
+    log "Request", "GET Request"
     resource = lines[0].split(" ")[1]
     if resource == "/data/status"
-      puts "data/status"
+      log "HTTP", "data/status"
       json = '{"servers":[' +
         $known_servers.map { |server| "\"#{server.pretty_s}\"" }.join(",") +
         '],"blocks":[' +
         $known_blocks.values.map { |block| block.json }.join(",") +
         ']}'
 
+      response = http_html_response(200, json, "application/json")
+    elsif resource == "/data/log"
+      log "HTTP", "data/log"
+      json = to_json($logs).delete("\r").delete("\n")
+      puts json
+      STDOUT.flush
       response = http_html_response(200, json, "application/json")
     else
       if resource == "/"
@@ -179,13 +204,11 @@ def connect(client)
         contents = File.read("debug_html" + resource)
         response = http_html_response(200, contents)
       rescue Exception => e
-        puts "[HTTP] failed to load #{resource} with error #{e}"
+        log "HTTP", "failed to load #{resource} with error #{e}"
         response = http_html_response(404, "<h1>404</h1><p>File not Found</p>")
       end
     end
   end
-  puts "Response:"
-  puts response
   client.write response
 
   STDOUT.flush
@@ -212,6 +235,14 @@ def escape_html(text)
   result
 end
 
+def log(kind, msg)
+  if not $logs[kind]
+    $logs[kind] = []
+  end
+  puts "[#{kind}] #{msg}"
+  $logs[kind].push({ t: Time.now.to_i, msg: msg })
+end
+
 def parse_args(args)
   i = 0
   result = {}
@@ -227,7 +258,7 @@ def parse_args(args)
       result[:mine_delay] = args[i + 1].to_i
       i += 1
     else
-      puts "Unknown command line argument: #{arg}"
+      log "ArgParse", "Unknown command line argument: #{arg}"
       exit 1
     end
     i += 1
@@ -253,7 +284,7 @@ end
 def server_thread(server)
   Thread.new do
     tcp_server = server.serve
-    puts "Server started on port #{server.port}"
+    log "Server", "Server started on port #{server.port}"
     loop do
       STDOUT.flush
       client = tcp_server.accept
@@ -271,7 +302,7 @@ def miner_thread(server, mine_delay)
       parents = $known_blocks.keys.sample(2 + rand(4))
       block = Block.new(random_sentence(), server.pretty_s, parents: parents)
       add_block(block)
-      puts "Mined block: #{block.pretty_s}"
+      log "Miner", "Mined block: #{block.pretty_s}"
       STDOUT.flush
       sleep mine_delay
     end
@@ -287,11 +318,11 @@ def pull_thread
         if not server
           next
         end
-        puts "[PULL] Pulling from #{server}..."
+        log "PULL", "Pulling from #{server}..."
         socket = server.connect
         socket.write "OMEGA PULL"
         response = socket.recv 4096
-        puts "[PULL] recvd response:\n#{response}"
+        log "PULL", "recvd response:\n#{response}"
         socket.close
 
         lines = response.split("\r\n")
@@ -302,7 +333,7 @@ def pull_thread
           add_server(Server.new(srv[0], srv[1].to_i))
         end
       rescue Exception => e
-        puts "[PULL] failed w/:\n#{e}"
+        log "PULL", "failed w/:\n#{e}"
       end
       STDOUT.flush
     end
@@ -318,7 +349,7 @@ def push_thread
         if not server
           next
         end
-        puts "[PUSH] Pushing to #{server}..."
+        log "PUSH", "Pushing to #{server}..."
         socket = server.connect
         request = "OMEGA PUSH\r\n"
         blocks = $known_blocks.values.sample(5)
@@ -326,7 +357,7 @@ def push_thread
         socket.write request
         socket.close
       rescue Exception => e
-        puts "[PUSH] failed w/:\n#{e}"
+        log "PUSH", "failed w/:\n#{e}"
       end
       STDOUT.flush
     end

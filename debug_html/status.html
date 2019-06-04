@@ -1,9 +1,10 @@
 <h1>Status</h1>
+<a href="/">Index</a>
 <h2>Servers</h2>
 <ul id="servers"></ul>
 <h2>Blocks</h2>
 <svg id="blocks"></svg>
-<script src="d3min.js"></script>
+
 <style>
 .links line {
   stroke: #aaa;
@@ -14,10 +15,12 @@
   stroke-width: 40px;
 }
 </style>
+
+<script src="d3min.js"></script>
 <script>
   async function start() {
-    var status = await fetch('data/status');
-    var data = await status.json();
+    var response = await fetch('data/status');
+    var data = await response.json();
 
     d3.select('#servers').selectAll('li').data(data.servers)
       .enter().append('li').text((x) => x);
@@ -59,7 +62,7 @@
       node.each((d) => {
         d.x += d.vx / 60;
         d.y += d.vy / 60;
-      })
+      });
       node
         .attr('cx', (d, i) => d.x)
         .attr('cy', (d, i) => d.y);
