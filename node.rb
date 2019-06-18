@@ -239,8 +239,9 @@ def log(kind, msg)
   if not $logs[kind]
     $logs[kind] = []
   end
-  puts "[#{kind}] #{msg}"
-  $logs[kind].push({ t: Time.now.to_i, msg: msg })
+  line = "[#{kind}] #{msg}"
+  puts line
+  $logs[kind].push({ t: Time.now.to_i, msg: line })
 end
 
 def parse_args(args)

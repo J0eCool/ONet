@@ -11,11 +11,24 @@
     var response = await fetch('data/log');
     var data = await response.json();
 
+    var logElem = d3.select('#log').selectAll('div');
+    function setLogs(key) {
+      var logs;
+      if (key === 'ALL') {
+        logs = d3.values(data).flat();
+      } else {
+        logs = data[key];
+      }
+      logElem.data(logs).enter().append('div').text((d) => d.msg);
+    }
+
     var logKeys = ['ALL'].concat(d3.keys(data));
-    d3.select('#keys').selectAll('span').data(logKeys).enter()
+    var items = d3.select('#keys').selectAll('span').data(logKeys);
+    items.exit().remove();
+    items.enter()
       .append('span').text(' | ')
       .append('a').text((d) => d).attr('href', '#')
-        .on('click', (d) => { console.log('CLIKD ON THE ', d)});
+        .on('click', setLogs);
   }
   start();
 </script>
